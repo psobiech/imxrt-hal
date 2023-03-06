@@ -3,7 +3,7 @@
 use core::mem::MaybeUninit;
 use usb_device::device::UsbDeviceState;
 
-const VID_PID: usb_device::device::UsbVidPid = usb_device::device::UsbVidPid(0x5824, 0x27dd);
+const VID_PID: usb_device::device::UsbVidPid = usb_device::device::UsbVidPid(0x16C0, 0x0483);
 const PRODUCT: &str = "imxrt-log";
 
 /// Provide some extra overhead for the interrupt endpoint.
@@ -31,6 +31,9 @@ const MAX_PACKET_SIZE: usize = crate::config::USB_BULK_MPS;
 const EP0_CONTROL_PACKET_SIZE: usize = 64;
 /// The USB GPT timer we use to (infrequently) check for data.
 const GPT_INSTANCE: imxrt_usbd::gpt::Instance = imxrt_usbd::gpt::Instance::Gpt0;
+/// Data rate used to mark soft reboot request from teensyduino
+#[cfg(feature = "usbd-softreboot")]
+const TEENSYDUINO_SOFT_REBOOT_DATA_RATE: u32 = 0x86;
 
 pub(crate) const VTABLE: crate::PollerVTable = crate::PollerVTable { poll };
 
@@ -103,6 +106,24 @@ unsafe fn poll() {
             }
         });
         CONFIGURED = true;
+    }
+
+    #[cfg(feature = "usbd-softreboot")]
+    if timer_event && class.line_coding().data_rate() == TEENSYDUINO_SOFT_REBOOT_DATA_RATE {
+        use core::arch::asm;
+
+        device.bus().set_interrupts(false);
+
+        // https://github.com/PaulStoffregen/teensy_loader_cli/blob/master/teensy_loader_cli.c#L344
+        // https://github.com/PaulStoffregen/cores/blob/ee3a0ada4af8338bc24f1cf12eb696dc6aa02b3b/usb_serial/usb.c#L502
+        //
+        // Teensyduino uses data_rate magic value (0x86 / 134 / ascii †) to issue a reset,
+        // it does wait on a timer to reset, I just hacked a timer_event for now
+        //
+        // This is only PoC (but it works), there are additional things that are in the original reset routine, see:
+        // https://github.com/PaulStoffregen/cores/blob/2dbb6f6c58f3d8e1272286daba3f3b094893c5b3/teensy4/usb.c#L211
+
+        unsafe { asm!("bkpt #251", options(nomem, nostack, preserves_flags)) };
     }
 
     // There's no need to wait if we were are newly configured.

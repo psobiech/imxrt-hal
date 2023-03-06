@@ -49,6 +49,7 @@ workspace = true
 default = ["defmt", "log", "lpuart", "usbd"]
 lpuart = ["imxrt-hal"]
 usbd = ["dep:imxrt-usbd", "dep:usb-device", "dep:usbd-serial"]
+usbd-softreboot = ["usbd"]
 
 [dev-dependencies.cortex-m]
 version = "0.7"
